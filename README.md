@@ -179,6 +179,7 @@ npm run build               # Build shared package, API, and web
 npm test                    # Run backend Jest tests
 npm run db:push             # Apply Prisma schema to DATABASE_URL
 npm run db:seed             # Reset and create demo data
+npm run prisma:generate -w apps/api # Regenerate Prisma types after schema changes
 ```
 
 Workspace-specific commands are also available:

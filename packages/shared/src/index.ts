@@ -14,6 +14,20 @@ export const TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
   COMPLETED: ["REOPENED"], REOPENED: ["IN_PROGRESS"]
 };
 export const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+export const registerSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Invalid email address"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+  confirmPassword: z.string(),
+  role: z.enum(["ADMIN", "MANAGER", "EXECUTIVE"] as const),
+  inviteCode: z.string().min(1, "Invite code is required"),
+}).refine((d) => d.password === d.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
 export const applicationSchema = z.object({ customerId: z.string().uuid(), title: z.string().min(2), description: z.string().min(2), priority: z.enum(Priorities) });
 export const transitionSchema = z.object({ status: z.enum(Statuses), version: z.number().int().positive() });
 export const updateApplicationSchema = z.object({ title: z.string().min(2).optional(), description: z.string().min(2).optional(), priority: z.enum(Priorities).optional(), version: z.number().int().positive() });

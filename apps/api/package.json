@@ -6,6 +6,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "jest --runInBand",
+    "typecheck:prisma": "tsc -p prisma/tsconfig.json --noEmit",
+    "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "prisma db seed"
   },

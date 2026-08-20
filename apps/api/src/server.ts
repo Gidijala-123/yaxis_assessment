@@ -3,7 +3,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors"; import cookieParser from "cookie-parser"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
 import { PrismaClient, Role, ApplicationStatus, Priority, SyncStatus, ActivityAction, WorkStatus, Prisma } from "@prisma/client";
 import swaggerUi from "swagger-ui-express";
-import { loginSchema, applicationSchema, transitionSchema, updateApplicationSchema, TRANSITIONS, AuthUser } from "@customer-workflow/shared";
+import { loginSchema, registerSchema, applicationSchema, transitionSchema, updateApplicationSchema, TRANSITIONS, AuthUser } from "@customer-workflow/shared";
 const prisma = new PrismaClient(); const app = express(); const secret = process.env.JWT_SECRET || "dev-secret";
 app.use(cors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000", credentials: true })); app.use(express.json()); app.use(cookieParser());
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "Flowdesk API", version: "1.0.0" }, paths: { "/api/health": { get: { responses: { "200": { description: "Healthy" } } } } } }));
@@ -16,6 +16,33 @@ const includeApplication = { customer: true, assignedTo: { select: { id: true, n
 app.get("/api/health", (_req, res) => res.json({ data: { ok: true }, error: null }));
 app.post("/api/auth/login", async (req, res, next) => { try { const input = loginSchema.parse(req.body); const user = await prisma.user.findUnique({ where: { email: input.email } }); if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) throw error(401, "Invalid email or password"); const token = jwt.sign({ id: user.id, userId: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, secret, { expiresIn: "8h" }); res.cookie("token", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 8 * 60 * 60 * 1000 }); res.json({ data: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, error: null }); } catch (e) { next(e); } });
 app.post("/api/auth/logout", (_req, res) => { res.clearCookie("token"); res.json({ data: null, error: null }); });
+app.post("/api/auth/register", async (req, res, next) => {
+  try {
+    const input = registerSchema.parse(req.body);
+    // Validate invite code — ADMIN_INVITE allows admin creation, TEAM_INVITE for others
+    const validCodes: Record<string, Role[]> = {
+      "YAXIS-ADMIN-2024": [Role.ADMIN],
+      "YAXIS-MANAGER-2024": [Role.MANAGER],
+      "YAXIS-EXEC-2024": [Role.EXECUTIVE],
+    };
+    const allowedRoles = validCodes[input.inviteCode];
+    if (!allowedRoles) throw error(400, "Invalid invite code");
+    if (!allowedRoles.includes(input.role as Role)) throw error(400, `Invite code does not permit the '${input.role}' role`);
+    const existing = await prisma.user.findUnique({ where: { email: input.email } });
+    if (existing) throw error(409, "An account with this email already exists");
+    const passwordHash = await bcrypt.hash(input.password, 12);
+    const user = await prisma.user.create({
+      data: { name: input.name, email: input.email, passwordHash, role: input.role as Role },
+    });
+    const token = jwt.sign(
+      { id: user.id, userId: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId },
+      secret,
+      { expiresIn: "8h" }
+    );
+    res.cookie("token", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 8 * 60 * 60 * 1000 });
+    res.status(201).json({ data: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, error: null });
+  } catch (e) { next(e); }
+});
 app.get("/api/auth/me", requireAuth, (req: AuthedRequest, res) => res.json({ data: req.user, error: null }));
 app.get("/api/dashboard", requireAuth, async (req: AuthedRequest, res, next) => { try { const where = scope(req.user!); const [total, completed, urgent, recent] = await Promise.all([prisma.application.count({ where }), prisma.application.count({ where: { ...where, status: "COMPLETED" } }), prisma.application.count({ where: { ...where, priority: "URGENT" } }), prisma.application.findMany({ where, include: includeApplication, orderBy: { updatedAt: "desc" }, take: 8 })]); res.json({ data: { stats: { total, completed, urgent }, recent }, error: null }); } catch (e) { next(e); } });
 app.get("/api/applications", requireAuth, async (req: AuthedRequest, res, next) => { try { const { status, priority, search } = req.query; const where: Prisma.ApplicationWhereInput = { ...scope(req.user!), ...(status ? { status: status as ApplicationStatus } : {}), ...(priority ? { priority: priority as Priority } : {}), ...(search ? { OR: [{ title: { contains: String(search), mode: "insensitive" } }, { customer: { name: { contains: String(search), mode: "insensitive" } } }] } : {}) }; const items = await prisma.application.findMany({ where, include: includeApplication, orderBy: { updatedAt: "desc" }, take: 50 }); res.json({ data: items, error: null }); } catch (e) { next(e); } });
