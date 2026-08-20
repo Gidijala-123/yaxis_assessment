@@ -1,0 +1,152 @@
+generator client {
+	provider = "prisma-client-js"
+}
+
+datasource db {
+	provider = "postgresql"
+	url = env("DATABASE_URL")
+}
+
+enum Role {
+	ADMIN
+	MANAGER
+	EXECUTIVE
+}
+enum ApplicationStatus {
+	NEW
+	WAITING_FOR_INFO
+	IN_PROGRESS
+	UNDER_REVIEW
+	COMPLETED
+	REOPENED
+}
+enum Priority {
+	LOW
+	MEDIUM
+	HIGH
+	URGENT
+}
+enum WorkStatus {
+	PENDING
+	IN_PROGRESS
+	COMPLETED
+}
+enum SyncStatus {
+	PENDING
+	SUCCEEDED
+	FAILED
+	RETRYING
+}
+enum ActivityAction {
+	APPLICATION_CREATED
+	ASSIGNED
+	REASSIGNED
+	STATUS_CHANGED
+	WORK_ITEM_CREATED
+	WORK_ITEM_COMPLETED
+	SYNC_TRIGGERED
+	SYNC_SUCCEEDED
+	SYNC_FAILED
+}
+
+model User {
+	id String @id @default(uuid())
+	name String
+	email String @unique
+	passwordHash String
+	role Role
+	teamId String?
+	team Team? @relation(fields: [teamId], references: [id])
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+	managedTeam Team? @relation("TeamManager")
+	createdApplications Application[] @relation("ApplicationCreator")
+	assignedApplications Application[] @relation("ApplicationAssignee")
+	createdCustomers Customer[]
+	activities ActivityLog[]
+	assignedWorkItems WorkItem[]
+}
+model Team {
+	id String @id @default(uuid())
+	name String
+	managerId String @unique
+	manager User @relation("TeamManager", fields: [managerId], references: [id])
+	members User[]
+	applications Application[]
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+}
+model Customer {
+	id String @id @default(uuid())
+	name String
+	email String
+	phone String
+	company String?
+	createdById String
+	createdBy User @relation(fields: [createdById], references: [id])
+	applications Application[]
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+}
+model Application {
+	id String @id @default(uuid())
+	customerId String
+	customer Customer @relation(fields: [customerId], references: [id])
+	title String
+	description String
+	status ApplicationStatus @default(NEW)
+	priority Priority
+	assignedToId String?
+	assignedTo User? @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+	teamId String
+	team Team @relation(fields: [teamId], references: [id])
+	createdById String
+	createdBy User @relation("ApplicationCreator", fields: [createdById], references: [id])
+	version Int @default(1)
+	workItems WorkItem[]
+	activities ActivityLog[]
+	syncJobs SyncJob[]
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+	@@index([status])
+	@@index([assignedToId])
+	@@index([customerId])
+	@@index([teamId])
+}
+model WorkItem {
+	id String @id @default(uuid())
+	applicationId String
+	application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+	title String
+	description String
+	status WorkStatus @default(PENDING)
+	assignedToId String?
+	assignedTo User? @relation(fields: [assignedToId], references: [id])
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+}
+model ActivityLog {
+	id String @id @default(uuid())
+	applicationId String
+	application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+	actorId String
+	actor User @relation(fields: [actorId], references: [id])
+	action ActivityAction
+	metadata Json
+	createdAt DateTime @default(now())
+}
+model SyncJob {
+	id String @id @default(uuid())
+	applicationId String
+	application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+	idempotencyKey String @unique
+	status SyncStatus @default(PENDING)
+	attempts Int @default(0)
+	lastAttemptAt DateTime?
+	nextAttemptAt DateTime?
+	lastError String?
+	payload Json
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
+	@@index([status])
+}
