@@ -48,19 +48,19 @@ The API supports customer creation, application creation, assignment/reassignmen
 
 ## Technology Choices
 
-| Area | Technology | Reason |
-| --- | --- | --- |
-| Web | Next.js App Router, TypeScript | Gives the UI a modern React structure and production build pipeline. |
-| UI | Tailwind CSS plus focused component CSS | Keeps layout fast to iterate while allowing a deliberate visual system. |
-| Server state | TanStack React Query | Handles caching, refetching, invalidation, loading, and error states. |
-| Forms and validation | React Hook Form/Zod-compatible shared contracts | Provides a path for consistent client/server validation. |
-| API | Node.js, Express, TypeScript | Small, explicit REST API with familiar middleware boundaries. |
-| Database | PostgreSQL | Relational ownership, workflow history, indexes, and transactions fit the domain better than a document store. |
-| ORM | Prisma | Type-safe queries, schema generation, relations, and predictable local setup. |
-| Authentication | JWT in an httpOnly cookie | Keeps the API independently deployable without adding a hosted auth dependency. |
-| Background work | Transactional outbox plus in-process poller | Demonstrates reliable async behavior without adding Redis or queue infrastructure to a time-boxed assessment. |
-| Testing | Jest and Supertest dependencies | Supports focused backend unit and integration coverage. |
-| Deployment | Docker Compose | Starts PostgreSQL, API, and web as one local system. |
+| Area                 | Technology                                      | Reason                                                                                                         |
+| -------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Web                  | Next.js App Router, TypeScript                  | Gives the UI a modern React structure and production build pipeline.                                           |
+| UI                   | Tailwind CSS plus focused component CSS         | Keeps layout fast to iterate while allowing a deliberate visual system.                                        |
+| Server state         | TanStack React Query                            | Handles caching, refetching, invalidation, loading, and error states.                                          |
+| Forms and validation | React Hook Form/Zod-compatible shared contracts | Provides a path for consistent client/server validation.                                                       |
+| API                  | Node.js, Express, TypeScript                    | Small, explicit REST API with familiar middleware boundaries.                                                  |
+| Database             | PostgreSQL                                      | Relational ownership, workflow history, indexes, and transactions fit the domain better than a document store. |
+| ORM                  | Prisma                                          | Type-safe queries, schema generation, relations, and predictable local setup.                                  |
+| Authentication       | JWT in an httpOnly cookie                       | Keeps the API independently deployable without adding a hosted auth dependency.                                |
+| Background work      | Transactional outbox plus in-process poller     | Demonstrates reliable async behavior without adding Redis or queue infrastructure to a time-boxed assessment.  |
+| Testing              | Jest and Supertest dependencies                 | Supports focused backend unit and integration coverage.                                                        |
+| Deployment           | Docker Compose                                  | Starts PostgreSQL, API, and web as one local system.                                                           |
 
 The trade-offs are intentional. PostgreSQL requires schema management but gives stronger relational guarantees. JWT cookies require production work around revocation and refresh-token rotation. The in-process poller is simple but does not provide the durability or horizontal coordination of a real queue.
 
@@ -196,11 +196,11 @@ npm test -w apps/api
 
 All seeded accounts use the password `demo1234`.
 
-| Role | Email | Expected visibility |
-| --- | --- | --- |
-| Admin | `admin@workflow.local` | All teams and applications |
-| Manager | `manager1@workflow.local` | Central Operations team |
-| Manager | `manager2@workflow.local` | North Operations team |
+| Role      | Email                                                 | Expected visibility                     |
+| --------- | ----------------------------------------------------- | --------------------------------------- |
+| Admin     | `admin@workflow.local`                                | All teams and applications              |
+| Manager   | `manager1@workflow.local`                             | Central Operations team                 |
+| Manager   | `manager2@workflow.local`                             | North Operations team                   |
 | Executive | `exec1@workflow.local` through `exec4@workflow.local` | Applications assigned to that executive |
 
 ## Architecture
