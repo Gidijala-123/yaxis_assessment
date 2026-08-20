@@ -4,6 +4,7 @@ import cors from "cors"; import cookieParser from "cookie-parser"; import bcrypt
 import { PrismaClient, Role, ApplicationStatus, Priority, SyncStatus, ActivityAction, WorkStatus, Prisma } from "@prisma/client";
 import swaggerUi from "swagger-ui-express";
 import { loginSchema, registerSchema, applicationSchema, transitionSchema, updateApplicationSchema, TRANSITIONS, AuthUser } from "@customer-workflow/shared";
+import { startKeepAlive } from "./keepalive";
 const prisma = new PrismaClient(); const app = express(); const secret = process.env.JWT_SECRET || "dev-secret";
 app.use(cors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000", credentials: true })); app.use(express.json()); app.use(cookieParser());
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "Flowdesk API", version: "1.0.0" }, paths: { "/api/health": { get: { responses: { "200": { description: "Healthy" } } } } } }));
@@ -51,6 +52,87 @@ app.delete("/api/applications/:id", requireAuth, requireRole(Role.ADMIN, Role.MA
 app.post("/api/applications", requireAuth, requireRole(Role.ADMIN, Role.MANAGER), async (req: AuthedRequest, res, next) => { try { const input = applicationSchema.parse(req.body); const teamId = req.user!.role === Role.MANAGER ? req.user!.teamId! : String(req.body.teamId || req.user!.teamId || ""); const item = await prisma.application.create({ data: { ...input, teamId, createdById: req.user!.id }, include: includeApplication }); await prisma.activityLog.create({ data: { applicationId: item.id, actorId: req.user!.id, action: ActivityAction.APPLICATION_CREATED, metadata: {} } }); res.status(201).json({ data: item, error: null }); } catch (e) { next(e); } });
 app.patch("/api/applications/:id", requireAuth, async (req: AuthedRequest, res, next) => { try { const input = updateApplicationSchema.parse(req.body); const current = await prisma.application.findFirst({ where: { id: String(req.params.id), ...scope(req.user!) } }); if (!current) throw error(404, "Application not found"); const result = await prisma.application.updateMany({ where: { id: current.id, version: input.version }, data: { title: input.title, description: input.description, priority: input.priority, version: { increment: 1 } } }); if (!result.count) throw error(409, "This application was updated by someone else - please refresh."); res.json({ data: await prisma.application.findUnique({ where: { id: current.id }, include: includeApplication }), error: null }); } catch (e) { next(e); } });
 app.post("/api/applications/:id/status", requireAuth, async (req: AuthedRequest, res, next) => { try { const input = transitionSchema.parse(req.body); const current = await prisma.application.findFirst({ where: { id: String(req.params.id), ...scope(req.user!) } }); if (!current) throw error(404, "Application not found"); if (!TRANSITIONS[current.status as keyof typeof TRANSITIONS].includes(input.status)) throw error(400, `Invalid transition from ${current.status} to ${input.status}`); if (input.status === "REOPENED" && req.user!.role === Role.EXECUTIVE) throw error(403, "Executives cannot reopen completed applications"); const completedAt = new Date(); await prisma.$transaction(async (tx: Prisma.TransactionClient) => { const updated = await tx.application.updateMany({ where: { id: current.id, version: input.version }, data: { status: input.status, version: { increment: 1 }, updatedAt: completedAt } }); if (!updated.count) throw error(409, "This application was updated by someone else - please refresh."); await tx.activityLog.create({ data: { applicationId: current.id, actorId: req.user!.id, action: ActivityAction.STATUS_CHANGED, metadata: { from: current.status, to: input.status } } }); if (input.status === "COMPLETED") { const key = `${current.id}:${completedAt.toISOString()}`; await tx.syncJob.create({ data: { applicationId: current.id, idempotencyKey: key, payload: { applicationId: current.id, title: current.title, completedAt: completedAt.toISOString() } } }); await tx.activityLog.create({ data: { applicationId: current.id, actorId: req.user!.id, action: ActivityAction.SYNC_TRIGGERED, metadata: { idempotencyKey: key } } }); } }); res.json({ data: { status: input.status }, error: null }); } catch (e) { next(e); } });
+app.get("/api/analytics", requireAuth, async (req: AuthedRequest, res, next) => {
+  try {
+    const where = scope(req.user!);
+
+    // Run all aggregations in parallel
+    const [allApps, customers, workItems] = await Promise.all([
+      prisma.application.findMany({
+        where,
+        select: {
+          status: true, priority: true, createdAt: true, updatedAt: true, customerId: true,
+          workItems: { select: { status: true } },
+          syncJobs: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      }),
+      prisma.customer.findMany({
+        where: { applications: { some: where } },
+        select: { id: true, name: true, _count: { select: { applications: true } } },
+        orderBy: { applications: { _count: "desc" } },
+        take: 8,
+      }),
+      prisma.workItem.findMany({
+        where: { application: where },
+        select: { status: true },
+      }),
+    ]);
+
+    // 1. Status distribution (pie chart)
+    const statusMap: Record<string, number> = {};
+    for (const a of allApps) statusMap[a.status] = (statusMap[a.status] || 0) + 1;
+    const byStatus = Object.entries(statusMap).map(([name, value]) => ({ name: name.replaceAll("_", " "), value }));
+
+    // 2. Priority distribution (pie chart)
+    const priorityMap: Record<string, number> = {};
+    for (const a of allApps) priorityMap[a.priority] = (priorityMap[a.priority] || 0) + 1;
+    const byPriority = Object.entries(priorityMap).map(([name, value]) => ({ name, value }));
+
+    // 3. Applications created per month — last 6 months (bar chart)
+    const monthlyMap: Record<string, number> = {};
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = d.toLocaleString("en-US", { month: "short", year: "2-digit" });
+      monthlyMap[key] = 0;
+    }
+    for (const a of allApps) {
+      const d = new Date(a.createdAt);
+      const key = d.toLocaleString("en-US", { month: "short", year: "2-digit" });
+      if (key in monthlyMap) monthlyMap[key]++;
+    }
+    const byMonth = Object.entries(monthlyMap).map(([month, count]) => ({ month, count }));
+
+    // 4. Top customers by application count (horizontal bar)
+    const topCustomers = customers.map((c) => ({ name: c.name, count: c._count.applications }));
+
+    // 5. Work item completion rate (donut / summary)
+    const wiTotal = workItems.length;
+    const wiCompleted = workItems.filter((w) => w.status === "COMPLETED").length;
+    const wiInProgress = workItems.filter((w) => w.status === "IN_PROGRESS").length;
+    const wiPending = workItems.filter((w) => w.status === "PENDING").length;
+    const workItemStats = {
+      total: wiTotal, completed: wiCompleted, inProgress: wiInProgress, pending: wiPending,
+      completionRate: wiTotal > 0 ? Math.round((wiCompleted / wiTotal) * 100) : 0
+    };
+
+    // 6. Sync job health (small pie)
+    const syncMap: Record<string, number> = {};
+    for (const a of allApps) {
+      const s = a.syncJobs[0]?.status || "NOT_STARTED";
+      syncMap[s] = (syncMap[s] || 0) + 1;
+    }
+    const syncHealth = Object.entries(syncMap).map(([name, value]) => ({ name: name.replaceAll("_", " "), value }));
+
+    res.json({
+      data: {
+        byStatus, byPriority, byMonth, topCustomers, workItemStats, syncHealth,
+        totals: { applications: allApps.length, customers: customers.length }
+      }, error: null
+    });
+  } catch (e) { next(e); }
+});
+
 app.get("/api/customers", requireAuth, async (req: AuthedRequest, res, next) => { try { const customers = await prisma.customer.findMany({ where: { ...(req.query.search ? { OR: [{ name: { contains: String(req.query.search), mode: "insensitive" } }, { email: { contains: String(req.query.search), mode: "insensitive" } }, { company: { contains: String(req.query.search), mode: "insensitive" } }] } : {}), applications: { some: scope(req.user!) } }, include: { _count: { select: { applications: true } } }, orderBy: { name: "asc" } }); res.json({ data: customers, error: null }); } catch (e) { next(e); } });
 app.get("/api/customers/:id", requireAuth, async (req: AuthedRequest, res, next) => { try { const customer = await prisma.customer.findFirst({ where: { id: String(req.params.id), applications: { some: scope(req.user!) } }, include: { applications: { where: scope(req.user!), include: includeApplication, orderBy: { updatedAt: "desc" } } } }); if (!customer) throw error(404, "Customer not found"); res.json({ data: customer, error: null }); } catch (e) { next(e); } });
 app.post("/api/customers", requireAuth, requireRole(Role.ADMIN, Role.MANAGER), async (req: AuthedRequest, res, next) => { try { const customer = await prisma.customer.create({ data: { name: String(req.body.name), email: String(req.body.email), phone: String(req.body.phone || ""), company: req.body.company ? String(req.body.company) : null, createdById: req.user!.id } }); res.status(201).json({ data: customer, error: null }); } catch (e) { next(e); } });
@@ -62,5 +144,8 @@ const processed = new Map<string, { externalId: string }>();
 async function processSyncJobs() { const jobs = await prisma.syncJob.findMany({ where: { status: { in: [SyncStatus.PENDING, SyncStatus.RETRYING] } }, take: 10 }); for (const job of jobs) { if (job.nextAttemptAt && job.nextAttemptAt > new Date()) continue; try { if (processed.has(job.idempotencyKey)) { await prisma.syncJob.update({ where: { id: job.id }, data: { status: SyncStatus.SUCCEEDED, attempts: { increment: 1 }, lastAttemptAt: new Date() } }); continue; } await prisma.syncJob.update({ where: { id: job.id }, data: { attempts: { increment: 1 }, lastAttemptAt: new Date() } }); await new Promise((resolve) => setTimeout(resolve, 150)); if (Math.random() < 0.2) throw new Error("Mock CRM transient failure"); processed.set(job.idempotencyKey, { externalId: `crm-${job.id}` }); await prisma.syncJob.update({ where: { id: job.id }, data: { status: SyncStatus.SUCCEEDED, nextAttemptAt: null } }); await prisma.activityLog.create({ data: { applicationId: job.applicationId, actorId: (await prisma.application.findUniqueOrThrow({ where: { id: job.applicationId } })).createdById, action: ActivityAction.SYNC_SUCCEEDED, metadata: { externalId: `crm-${job.id}` } } }); } catch (e) { const attempts = job.attempts + 1; const delayMs = Math.min(2 ** attempts * 5000, 300000); await prisma.syncJob.update({ where: { id: job.id }, data: { status: attempts >= 5 ? SyncStatus.FAILED : SyncStatus.RETRYING, lastError: String(e), nextAttemptAt: attempts >= 5 ? null : new Date(Date.now() + delayMs) } }); } } }
 setInterval(() => processSyncJobs().catch(console.error), 5000);
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => { const status = err.status || (err.name === "ZodError" ? 400 : 500); res.status(status).json({ data: null, error: { message: status === 500 ? "Internal server error" : err.message } }); });
-app.listen(Number(process.env.PORT || 4000), () => console.log(`API listening on ${process.env.PORT || 4000}`));
+app.listen(Number(process.env.PORT || 4000), () => {
+  console.log(`API listening on ${process.env.PORT || 4000}`);
+  startKeepAlive();
+});
 export { app };

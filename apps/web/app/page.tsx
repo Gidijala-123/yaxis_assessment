@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApplicationStatus, AuthUser, TRANSITIONS } from "@customer-workflow/shared";
+import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, AreaChart, Area,
+} from "recharts";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -130,6 +135,20 @@ const IconEyeOff = () => (
 const IconActivity = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);
+
+const IconBarChart = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" />
+    <line x1="6" y1="20" x2="6" y2="14" /><line x1="2" y1="20" x2="22" y2="20" />
+  </svg>
+);
+
+const IconTrendUp = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+    <polyline points="17 6 23 6 23 12" />
   </svg>
 );
 
@@ -876,6 +895,292 @@ function Detail({ item, user, close, changed }: {
   );
 }
 
+/* ── Analytics ──────────────────────────────────────────────── */
+
+type AnalyticsData = {
+  byStatus: { name: string; value: number }[];
+  byPriority: { name: string; value: number }[];
+  byMonth: { month: string; count: number }[];
+  topCustomers: { name: string; count: number }[];
+  workItemStats: { total: number; completed: number; inProgress: number; pending: number; completionRate: number };
+  syncHealth: { name: string; value: number }[];
+  totals: { applications: number; customers: number };
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  "NEW": "#6f2c92", "IN PROGRESS": "#0ea5e9", "UNDER REVIEW": "#8b5cf6",
+  "WAITING FOR INFO": "#f59e0b", "COMPLETED": "#10b981", "REOPENED": "#a855f7",
+};
+const PRIORITY_COLORS: Record<string, string> = {
+  "LOW": "#94a3b8", "MEDIUM": "#0ea5e9", "HIGH": "#f59e0b", "URGENT": "#f43f5e",
+};
+const SYNC_COLORS: Record<string, string> = {
+  "SUCCEEDED": "#10b981", "PENDING": "#f59e0b", "FAILED": "#f43f5e",
+  "RETRYING": "#f97316", "NOT STARTED": "#94a3b8",
+};
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="chart-tooltip">
+      {label && <p className="chart-tooltip-label">{label}</p>}
+      {payload.map((p: any, i: number) => (
+        <p key={i} style={{ color: p.color || p.fill }}>
+          <span>{p.name}: </span><strong>{p.value}</strong>
+        </p>
+      ))}
+    </div>
+  );
+};
+
+function Analytics() {
+  const { data, isLoading, isError, error, refetch } = useQuery<AnalyticsData>({
+    queryKey: ["analytics"],
+    queryFn: () => request("/analytics") as Promise<AnalyticsData>,
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return (
+    <div className="analytics-wrap">
+      <header className="topbar">
+        <div className="topbar-left">
+          <div className="breadcrumb"><span>Operations</span><span>/</span><span>Analytics</span></div>
+          <h1>Analytics</h1>
+        </div>
+      </header>
+      <div className="analytics-grid">
+        {[...Array(6)].map((_, i) => <div key={i} className="chart-card"><div className="skeleton" style={{ height: 260 }} /></div>)}
+      </div>
+    </div>
+  );
+
+  if (isError) return (
+    <div className="analytics-wrap">
+      <header className="topbar">
+        <div className="topbar-left"><h1>Analytics</h1></div>
+      </header>
+      <div className="state" style={{ marginTop: 80 }}>
+        <strong>Could not load analytics.</strong>
+        <p>{(error as Error).message}</p>
+        <button className="button" type="button" onClick={() => refetch()}><IconRefresh /> Retry</button>
+      </div>
+    </div>
+  );
+
+  if (!data) return null;
+  const { byStatus, byPriority, byMonth, topCustomers, workItemStats, syncHealth } = data;
+
+  return (
+    <div className="analytics-wrap">
+      {/* Topbar */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <div className="breadcrumb"><span>Operations</span><span>/</span><span>Analytics</span></div>
+          <h1>Analytics</h1>
+        </div>
+        <div className="topbar-actions">
+          <button className="button" type="button" onClick={() => refetch()}>
+            <IconRefresh /> Refresh
+          </button>
+        </div>
+      </header>
+
+      {/* KPI strip */}
+      <div className="analytics-kpi-strip">
+        <div className="kpi-card kpi-purple">
+          <span className="kpi-label">Total Applications</span>
+          <strong className="kpi-value">{data.totals.applications}</strong>
+        </div>
+        <div className="kpi-card kpi-emerald">
+          <span className="kpi-label">Completed</span>
+          <strong className="kpi-value">{byStatus.find(s => s.name === "COMPLETED")?.value ?? 0}</strong>
+        </div>
+        <div className="kpi-card kpi-sky">
+          <span className="kpi-label">In Progress</span>
+          <strong className="kpi-value">{byStatus.find(s => s.name === "IN PROGRESS")?.value ?? 0}</strong>
+        </div>
+        <div className="kpi-card kpi-rose">
+          <span className="kpi-label">Urgent</span>
+          <strong className="kpi-value">{byPriority.find(p => p.name === "URGENT")?.value ?? 0}</strong>
+        </div>
+        <div className="kpi-card kpi-amber">
+          <span className="kpi-label">Work Item Completion</span>
+          <strong className="kpi-value">{workItemStats.completionRate}%</strong>
+        </div>
+        <div className="kpi-card kpi-slate">
+          <span className="kpi-label">Customers</span>
+          <strong className="kpi-value">{data.totals.customers}</strong>
+        </div>
+      </div>
+
+      <div className="analytics-grid">
+
+        {/* 1. Applications by Status — Pie */}
+        <div className="chart-card chart-card-wide">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Distribution</p>
+              <h3 className="chart-title">Applications by Status</h3>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie data={byStatus} cx="50%" cy="50%" outerRadius={95} innerRadius={52}
+                dataKey="value" nameKey="name" paddingAngle={3} label={({ name, percent }: { name?: string; percent?: number }) =>
+                  (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ""
+                } labelLine={false}>
+                {byStatus.map((entry) => (
+                  <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? "#94a3b8"} stroke="transparent" />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 2. Applications by Priority — Pie */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Distribution</p>
+              <h3 className="chart-title">By Priority</h3>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie data={byPriority} cx="50%" cy="50%" outerRadius={95}
+                dataKey="value" nameKey="name" paddingAngle={3}
+                label={({ name, percent }: { name?: string; percent?: number }) =>
+                  (percent ?? 0) > 0.05 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ""}
+                labelLine={false}>
+                {byPriority.map((entry) => (
+                  <Cell key={entry.name} fill={PRIORITY_COLORS[entry.name] ?? "#94a3b8"} stroke="transparent" />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 3. Monthly Trend — Area Chart */}
+        <div className="chart-card chart-card-full">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Trend</p>
+              <h3 className="chart-title">Applications Created — Last 6 Months</h3>
+            </div>
+            <div className="chart-badge"><IconTrendUp /> Trend</div>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={byMonth} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6f2c92" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#6f2c92" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="count" name="Applications" stroke="#6f2c92"
+                strokeWidth={2.5} fill="url(#areaGrad)" dot={{ fill: "#6f2c92", strokeWidth: 0, r: 4 }}
+                activeDot={{ r: 6, fill: "#6f2c92" }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 4. Top Customers — Horizontal Bar */}
+        <div className="chart-card chart-card-wide">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Customers</p>
+              <h3 className="chart-title">Top Customers by Applications</h3>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={topCustomers} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="count" name="Applications" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                {topCustomers.map((_, i) => (
+                  <Cell key={i} fill={`hsl(${270 + i * 18}, 55%, ${52 - i * 3}%)`} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 5. Work Items — Stacked Bar */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Workload</p>
+              <h3 className="chart-title">Work Item Status</h3>
+            </div>
+            <span className="chart-rate-badge">{workItemStats.completionRate}% done</span>
+          </div>
+          <div className="work-item-donut">
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart>
+                <Pie data={[
+                  { name: "Completed", value: workItemStats.completed },
+                  { name: "In Progress", value: workItemStats.inProgress },
+                  { name: "Pending", value: workItemStats.pending },
+                ]} cx="50%" cy="50%" innerRadius={55} outerRadius={82} paddingAngle={3} dataKey="value">
+                  <Cell fill="#10b981" stroke="transparent" />
+                  <Cell fill="#0ea5e9" stroke="transparent" />
+                  <Cell fill="#e2e8f0" stroke="transparent" />
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="donut-center">
+              <strong>{workItemStats.total}</strong>
+              <span>total</span>
+            </div>
+          </div>
+          <div className="work-item-legend">
+            <div className="wi-legend-row"><span className="wi-dot" style={{ background: "#10b981" }} />Completed <b>{workItemStats.completed}</b></div>
+            <div className="wi-legend-row"><span className="wi-dot" style={{ background: "#0ea5e9" }} />In Progress <b>{workItemStats.inProgress}</b></div>
+            <div className="wi-legend-row"><span className="wi-dot" style={{ background: "#e2e8f0" }} />Pending <b>{workItemStats.pending}</b></div>
+          </div>
+        </div>
+
+        {/* 6. CRM Sync Health — Pie */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <p className="chart-eyebrow">Integrations</p>
+              <h3 className="chart-title">CRM Sync Health</h3>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie data={syncHealth} cx="50%" cy="50%" outerRadius={90}
+                dataKey="value" nameKey="name" paddingAngle={3}
+                label={({ name, percent }: { name?: string; percent?: number }) =>
+                  (percent ?? 0) > 0.05 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ""}
+                labelLine={false}>
+                {syncHealth.map((entry) => (
+                  <Cell key={entry.name} fill={SYNC_COLORS[entry.name] ?? "#94a3b8"} stroke="transparent" />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 /* ── Workspace ──────────────────────────────────────────────── */
 
 function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
@@ -884,6 +1189,7 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
   const [priority, setPriority] = useState("");
   const [selected, setSelected] = useState<Application | null>(null);
   const [creating, setCreating] = useState(false);
+  const [activeView, setActiveView] = useState<"applications" | "analytics">("applications");
 
   const client = useQueryClient();
 
@@ -931,10 +1237,10 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
           <span className="sidebar-section-label">Workspace</span>
 
           <button
-            className="nav-item active"
+            className={`nav-item${activeView === "applications" ? " active" : ""}`}
             type="button"
-            onClick={() => setQueue("", "")}
-            aria-current="page"
+            onClick={() => setActiveView("applications")}
+            aria-current={activeView === "applications" ? "page" : undefined}
           >
             <span className="nav-icon"><IconGrid /></span>
             <span className="nav-label">Applications</span>
@@ -950,6 +1256,16 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
           >
             <span className="nav-icon"><IconUsers /></span>
             <span className="nav-label">Customers</span>
+          </button>
+
+          <button
+            className={`nav-item${activeView === "analytics" ? " active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("analytics")}
+            aria-current={activeView === "analytics" ? "page" : undefined}
+          >
+            <span className="nav-icon"><IconBarChart /></span>
+            <span className="nav-label">Analytics</span>
           </button>
         </nav>
 
@@ -986,146 +1302,152 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
 
       {/* ── Main content ── */}
       <section className="workspace-main">
-        {/* Topbar */}
-        <header className="topbar">
-          <div className="topbar-left">
-            <div className="breadcrumb">
-              <span>Operations</span>
-              <span>/</span>
-              <span>Queue</span>
-            </div>
-            <h1>Application queue</h1>
-          </div>
-          <div className="topbar-actions">
-            <input
-              className="global-search"
-              placeholder="Search applications…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search applications"
-            />
-            {user.role !== "EXECUTIVE" && (
-              <button className="button compact" type="button" onClick={() => setCreating(true)}>
-                <IconPlus /> New application
-              </button>
-            )}
-          </div>
-        </header>
-
-        {/* Stats */}
-        <div className="stats-section">
-          <p className="stats-section-label">Overview</p>
-          <div className="stats-grid">
-            <Stat
-              label="Visible applications"
-              value={stats?.total}
-              detail="Clear all filters"
-              onClick={() => setQueue("")}
-              active={!status && !priority}
-              loading={dashboard.isLoading}
-              variant="purple"
-            />
-            <Stat
-              label="Completed"
-              value={stats?.completed}
-              detail="Show completed work"
-              onClick={() => setQueue("COMPLETED")}
-              active={status === "COMPLETED"}
-              loading={dashboard.isLoading}
-              variant="emerald"
-            />
-            <Stat
-              label="Urgent attention"
-              value={stats?.urgent}
-              detail="Show urgent work"
-              urgent
-              onClick={() => setQueue("", "URGENT")}
-              active={priority === "URGENT"}
-              loading={dashboard.isLoading}
-              variant="rose"
-            />
-          </div>
-        </div>
-
-        {/* Queue */}
-        <div className="queue-section">
-          <div className="content-heading">
-            <div className="content-heading-left">
-              <p className="section-eyebrow">Live work</p>
-              <h2>Applications</h2>
-            </div>
-            <div className="filter-bar">
-              <select
-                className="filter"
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                aria-label="Filter by status"
-              >
-                <option value="">All statuses</option>
-                {["NEW", "WAITING_FOR_INFO", "IN_PROGRESS", "UNDER_REVIEW", "COMPLETED", "REOPENED"].map((v) => (
-                  <option key={v} value={v}>{v.replaceAll("_", " ")}</option>
-                ))}
-              </select>
-              <select
-                className="filter"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                aria-label="Filter by priority"
-              >
-                <option value="">All priorities</option>
-                {["LOW", "MEDIUM", "HIGH", "URGENT"].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="queue-panel">
-            <div className="queue-toolbar">
-              <div className="queue-toolbar-left">
-                Applications
-                <span className="queue-count-badge">{apps.data?.length ?? 0}</span>
+        {activeView === "analytics" ? (
+          <Analytics />
+        ) : (
+          <>
+            {/* Topbar */}
+            <header className="topbar">
+              <div className="topbar-left">
+                <div className="breadcrumb">
+                  <span>Operations</span>
+                  <span>/</span>
+                  <span>Queue</span>
+                </div>
+                <h1>Application queue</h1>
               </div>
-              <span className="toolbar-note">Click a row to manage</span>
-            </div>
-
-            {apps.isLoading ? (
-              <div className="skeleton-list">
-                <div className="skeleton h-20" />
-                <div className="skeleton h-20" />
-                <div className="skeleton h-20" />
-              </div>
-            ) : apps.isError ? (
-              <div className="state">
-                <strong>Could not load applications.</strong>
-                <p>{(apps.error as Error).message}</p>
-                <button className="button" type="button" onClick={() => apps.refetch()}>
-                  <IconRefresh /> Retry
-                </button>
-              </div>
-            ) : apps.data?.length === 0 ? (
-              <div className="state">
-                <strong>No applications found.</strong>
-                <p>Try adjusting your filters or search query.</p>
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => { setStatus(""); setPriority(""); setSearch(""); }}
-                >
-                  Clear filters
-                </button>
-              </div>
-            ) : (
-              apps.data?.map((item) => (
-                <Row
-                  key={item.id}
-                  item={item}
-                  onOpen={() => request(`/applications/${item.id}`).then(setSelected)}
+              <div className="topbar-actions">
+                <input
+                  className="global-search"
+                  placeholder="Search applications…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  aria-label="Search applications"
                 />
-              ))
-            )}
-          </div>
-        </div>
+                {user.role !== "EXECUTIVE" && (
+                  <button className="button compact" type="button" onClick={() => setCreating(true)}>
+                    <IconPlus /> New application
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {/* Stats */}
+            <div className="stats-section">
+              <p className="stats-section-label">Overview</p>
+              <div className="stats-grid">
+                <Stat
+                  label="Visible applications"
+                  value={stats?.total}
+                  detail="Clear all filters"
+                  onClick={() => setQueue("")}
+                  active={!status && !priority}
+                  loading={dashboard.isLoading}
+                  variant="purple"
+                />
+                <Stat
+                  label="Completed"
+                  value={stats?.completed}
+                  detail="Show completed work"
+                  onClick={() => setQueue("COMPLETED")}
+                  active={status === "COMPLETED"}
+                  loading={dashboard.isLoading}
+                  variant="emerald"
+                />
+                <Stat
+                  label="Urgent attention"
+                  value={stats?.urgent}
+                  detail="Show urgent work"
+                  urgent
+                  onClick={() => setQueue("", "URGENT")}
+                  active={priority === "URGENT"}
+                  loading={dashboard.isLoading}
+                  variant="rose"
+                />
+              </div>
+            </div>
+
+            {/* Queue */}
+            <div className="queue-section">
+              <div className="content-heading">
+                <div className="content-heading-left">
+                  <p className="section-eyebrow">Live work</p>
+                  <h2>Applications</h2>
+                </div>
+                <div className="filter-bar">
+                  <select
+                    className="filter"
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    aria-label="Filter by status"
+                  >
+                    <option value="">All statuses</option>
+                    {["NEW", "WAITING_FOR_INFO", "IN_PROGRESS", "UNDER_REVIEW", "COMPLETED", "REOPENED"].map((v) => (
+                      <option key={v} value={v}>{v.replaceAll("_", " ")}</option>
+                    ))}
+                  </select>
+                  <select
+                    className="filter"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                    aria-label="Filter by priority"
+                  >
+                    <option value="">All priorities</option>
+                    {["LOW", "MEDIUM", "HIGH", "URGENT"].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="queue-panel">
+                <div className="queue-toolbar">
+                  <div className="queue-toolbar-left">
+                    Applications
+                    <span className="queue-count-badge">{apps.data?.length ?? 0}</span>
+                  </div>
+                  <span className="toolbar-note">Click a row to manage</span>
+                </div>
+
+                {apps.isLoading ? (
+                  <div className="skeleton-list">
+                    <div className="skeleton h-20" />
+                    <div className="skeleton h-20" />
+                    <div className="skeleton h-20" />
+                  </div>
+                ) : apps.isError ? (
+                  <div className="state">
+                    <strong>Could not load applications.</strong>
+                    <p>{(apps.error as Error).message}</p>
+                    <button className="button" type="button" onClick={() => apps.refetch()}>
+                      <IconRefresh /> Retry
+                    </button>
+                  </div>
+                ) : apps.data?.length === 0 ? (
+                  <div className="state">
+                    <strong>No applications found.</strong>
+                    <p>Try adjusting your filters or search query.</p>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() => { setStatus(""); setPriority(""); setSearch(""); }}
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                ) : (
+                  apps.data?.map((item) => (
+                    <Row
+                      key={item.id}
+                      item={item}
+                      onOpen={() => request(`/applications/${item.id}`).then(setSelected)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Panels */}
