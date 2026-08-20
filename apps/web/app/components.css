@@ -1127,7 +1127,8 @@
   color: #3b7755
 }
 
-.delete-button{width:100%;margin-top:28px;border:1px solid #efb3a4;background:#fff5f1;color:#b44d39;padding:12px;font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer}.delete-button:hover{background:#ffe5dc}
+ .delete-button{width:100%;margin-top:28px;border:1px solid #efb3a4;background:#fff5f1;color:#b44d39;padding:12px;font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer}.delete-button:hover{background:#ffe5dc}
+@keyframes shimmer {
   to {
     background-position: -200% 0
   }
