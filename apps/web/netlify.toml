@@ -4,12 +4,14 @@
   publish = "apps/web/.next"
 
 [build.environment]
-  NODE_VERSION        = "20"
-  NETLIFY_NEXT_PLUGIN_SKIP = "true"
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_API_URL = "https://yaxis-assessment.onrender.com/api"
 
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options        = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
+[functions]
+  directory = "apps/web/.netlify/functions-internal"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+  [plugins.inputs]
+    appDir = "apps/web"
