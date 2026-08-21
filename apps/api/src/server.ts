@@ -6,7 +6,7 @@ import swaggerUi from "swagger-ui-express";
 import { loginSchema, registerSchema, applicationSchema, transitionSchema, updateApplicationSchema, TRANSITIONS, AuthUser } from "@customer-workflow/shared";
 import { startKeepAlive } from "./keepalive";
 const prisma = new PrismaClient(); const app = express(); const secret = process.env.JWT_SECRET || "dev-secret";
-const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:3000").split(",").map(o => o.trim());
+const cookieOptions = { httpOnly: true, sameSite: "none" as const, secure: true, maxAge: 8 * 60 * 60 * 1000 };
 app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.some(o => o === origin || origin.startsWith(o))) { callback(null, true); } else { callback(new Error("Not allowed by CORS")); } }, credentials: true })); app.use(express.json()); app.use(cookieParser());
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "Flowdesk API", version: "1.0.0" }, paths: { "/api/health": { get: { responses: { "200": { description: "Healthy" } } } } } }));
 type AuthedRequest = Request & { user?: AuthUser };
@@ -16,8 +16,8 @@ const requireRole = (...roles: Role[]) => (req: AuthedRequest, _res: Response, n
 const scope = (user: AuthUser): Prisma.ApplicationWhereInput => user.role === Role.ADMIN ? {} : user.role === Role.MANAGER ? { teamId: user.teamId || "" } : { assignedToId: user.id };
 const includeApplication = { customer: true, assignedTo: { select: { id: true, name: true, email: true } }, team: true, workItems: true, activities: { include: { actor: { select: { name: true } } }, orderBy: { createdAt: "desc" as const } }, syncJobs: { orderBy: { createdAt: "desc" as const }, take: 1 } };
 app.get("/api/health", (_req, res) => res.json({ data: { ok: true }, error: null }));
-app.post("/api/auth/login", async (req, res, next) => { try { const input = loginSchema.parse(req.body); const user = await prisma.user.findUnique({ where: { email: input.email } }); if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) throw error(401, "Invalid email or password"); const token = jwt.sign({ id: user.id, userId: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, secret, { expiresIn: "8h" }); res.cookie("token", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 8 * 60 * 60 * 1000 }); res.json({ data: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, error: null }); } catch (e) { next(e); } });
-app.post("/api/auth/logout", (_req, res) => { res.clearCookie("token"); res.json({ data: null, error: null }); });
+app.post("/api/auth/login", async (req, res, next) => { try { const input = loginSchema.parse(req.body); const user = await prisma.user.findUnique({ where: { email: input.email } }); if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) throw error(401, "Invalid email or password"); const token = jwt.sign({ id: user.id, userId: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, secret, { expiresIn: "8h" }); res.cookie("token", token, cookieOptions); res.json({ data: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, error: null }); } catch (e) { next(e); } });
+app.post("/api/auth/logout", (_req, res) => { res.clearCookie("token", { httpOnly: true, sameSite: "none", secure: true }); res.json({ data: null, error: null }); });
 app.post("/api/auth/register", async (req, res, next) => {
   try {
     const input = registerSchema.parse(req.body);
@@ -41,7 +41,7 @@ app.post("/api/auth/register", async (req, res, next) => {
       secret,
       { expiresIn: "8h" }
     );
-    res.cookie("token", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 8 * 60 * 60 * 1000 });
+    res.cookie("token", token, cookieOptions);
     res.status(201).json({ data: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: user.teamId }, error: null });
   } catch (e) { next(e); }
 });
