@@ -1181,6 +1181,57 @@ function Analytics() {
   );
 }
 
+/* ── Customers View ─────────────────────────────────────────── */
+
+function CustomersView() {
+  const { data, isLoading, isError, error, refetch } = useQuery<Customer[]>({
+    queryKey: ["customers-list"],
+    queryFn: () => request("/customers") as Promise<Customer[]>,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <header className="topbar">
+        <div className="topbar-left">
+          <div className="breadcrumb"><span>Operations</span><span>/</span><span>Customers</span></div>
+          <h1>Customers</h1>
+        </div>
+      </header>
+      <div className="queue-section">
+        <div className="queue-panel">
+          <div className="queue-toolbar">
+            <div className="queue-toolbar-left">
+              Customers
+              <span className="queue-count-badge">{data?.length ?? 0}</span>
+            </div>
+          </div>
+          {isLoading ? (
+            <div className="skeleton-list"><div className="skeleton h-20" /><div className="skeleton h-20" /></div>
+          ) : isError ? (
+            <div className="state">
+              <strong>Could not load customers.</strong>
+              <p>{(error as Error).message}</p>
+              <button className="button" type="button" onClick={() => refetch()}><IconRefresh /> Retry</button>
+            </div>
+          ) : data?.length === 0 ? (
+            <div className="state"><strong>No customers found.</strong></div>
+          ) : (
+            data?.map((c) => (
+              <div key={c.id} className="app-row" style={{ cursor: "default" }}>
+                <div className="app-main">
+                  <div className="customer-avatar" style={{ display: "inline-flex", marginBottom: 6 }}>{c.name[0]}</div>
+                  <h3 style={{ marginBottom: 4 }}>{c.name}</h3>
+                  <div className="app-meta"><span>{c.email}</span><span>·</span><span>{c._count?.applications ?? 0} applications</span></div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Workspace ──────────────────────────────────────────────── */
 
 function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
@@ -1189,7 +1240,7 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
   const [priority, setPriority] = useState("");
   const [selected, setSelected] = useState<Application | null>(null);
   const [creating, setCreating] = useState(false);
-  const [activeView, setActiveView] = useState<"applications" | "analytics">("applications");
+  const [activeView, setActiveView] = useState<"applications" | "customers" | "analytics">("applications");
 
   const client = useQueryClient();
 
@@ -1250,9 +1301,10 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
           </button>
 
           <button
-            className="nav-item"
+            className={`nav-item${activeView === "customers" ? " active" : ""}`}
             type="button"
-            onClick={() => document.querySelector(".queue-panel")?.scrollIntoView({ behavior: "smooth" })}
+            onClick={() => setActiveView("customers")}
+            aria-current={activeView === "customers" ? "page" : undefined}
           >
             <span className="nav-icon"><IconUsers /></span>
             <span className="nav-label">Customers</span>
@@ -1304,6 +1356,8 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
       <section className="workspace-main">
         {activeView === "analytics" ? (
           <Analytics />
+        ) : activeView === "customers" ? (
+          <CustomersView />
         ) : (
           <>
             {/* Topbar */}

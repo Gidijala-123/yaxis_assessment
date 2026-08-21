@@ -6,17 +6,10 @@ export default function SidebarToggle() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // Only show toggle when sidebar is present (i.e. workspace view, not login)
-    const check = () => {
-      setVisible(!!document.querySelector(".sidebar"));
-    };
-
+    const check = () => setVisible(!!document.querySelector(".sidebar"));
     check();
-
-    // Watch for sidebar being added/removed from DOM
     const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
-
     return () => observer.disconnect();
   }, []);
 
@@ -33,7 +26,22 @@ export default function SidebarToggle() {
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       onClick={() => setCollapsed((v) => !v)}
     >
-      {collapsed ? "›" : "‹"}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+          width: 13,
+          height: 13,
+          transition: "transform 0.22s cubic-bezier(0.4,0,0.2,1)",
+          transform: collapsed ? "rotate(0deg)" : "rotate(180deg)",
+        }}
+      >
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
     </button>
   );
 }

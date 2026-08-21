@@ -326,25 +326,34 @@
   left: 244px;
   top: 22px;
   z-index: 30;
-  width: 24px;
-  height: 24px;
-  background: var(--bg-card);
-  border: 1.5px solid var(--border);
+  width: 26px;
+  height: 26px;
+  background: #6f2c92;
+  border: none;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 12px;
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-sm);
-  transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s, color 0.15s;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(111, 44, 146, 0.45);
+  transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s, transform 0.15s;
+  padding: 0;
+  line-height: 1;
 }
 
 .sidebar-toggle:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
+  background: #5a2278;
+  transform: scale(1.12);
+  box-shadow: 0 4px 14px rgba(111, 44, 146, 0.55);
+}
+
+.sidebar-toggle svg {
+  width: 13px;
+  height: 13px;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+  flex-shrink: 0;
 }
 
 /* ── Collapsed state ────────────────────────────────────────── */
@@ -372,11 +381,13 @@ body.sidebar-collapsed .logout-label {
   max-width: 0;
   overflow: hidden;
   pointer-events: none;
+  display: none;
 }
 
 body.sidebar-collapsed .nav-item {
   justify-content: center;
   padding: 9px;
+  gap: 0;
 }
 
 body.sidebar-collapsed .nav-item.active::before { display: none; }
