@@ -7,8 +7,7 @@ services:
       npm install --ignore-scripts
       npm run build -w packages/shared
       npx prisma generate --schema=apps/api/prisma/schema.prisma
-      npm run build -w apps/api
-    startCommand: node apps/api/dist/server.js
+    startCommand: node node_modules/.bin/tsx apps/api/src/server.ts
     envVars:
       - key: NODE_ENV
         value: production
