@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "echo 'No build step needed - using tsx'",
-    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
     "test": "jest --runInBand",
     "typecheck:prisma": "tsc -p prisma/tsconfig.json --noEmit",
     "prisma:generate": "prisma generate",

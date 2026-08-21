@@ -603,7 +603,7 @@ function CreatePanel({ user, close, saved }: {
     try {
       await request("/applications", {
         method: "POST",
-        body: JSON.stringify({ customerId, title, description, priority, teamId: user.teamId }),
+        body: JSON.stringify({ customerId, title, description, priority }),
       });
       saved();
       close();
