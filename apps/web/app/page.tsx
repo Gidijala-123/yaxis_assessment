@@ -1440,7 +1440,10 @@ function Workspace({ user, logout }: { user: AuthUser; logout: () => void }) {
                     <Row
                       key={item.id}
                       item={item}
-                      onOpen={() => request(`/applications/${item.id}`).then(setSelected)}
+                      onOpen={() => {
+                        setSelected(item as Application); // show instantly from cached data
+                        request(`/applications/${item.id}`).then(setSelected); // refresh in background
+                      }}
                     />
                   ))
                 )}
