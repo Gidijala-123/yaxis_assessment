@@ -7,6 +7,7 @@ import { loginSchema, registerSchema, applicationSchema, transitionSchema, updat
 import { startKeepAlive } from "./keepalive";
 const prisma = new PrismaClient(); const app = express(); const secret = process.env.JWT_SECRET || "dev-secret";
 const cookieOptions = { httpOnly: true, sameSite: "none" as const, secure: true, maxAge: 8 * 60 * 60 * 1000 };
+const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:3000").split(",").map(o => o.trim());
 app.use(cors({ origin: (origin, callback) => { if (!origin || allowedOrigins.some(o => o === origin || origin.startsWith(o))) { callback(null, true); } else { callback(new Error("Not allowed by CORS")); } }, credentials: true })); app.use(express.json()); app.use(cookieParser());
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "Flowdesk API", version: "1.0.0" }, paths: { "/api/health": { get: { responses: { "200": { description: "Healthy" } } } } } }));
 type AuthedRequest = Request & { user?: AuthUser };
